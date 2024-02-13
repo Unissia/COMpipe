@@ -1,6 +1,6 @@
 #include <windows.h>
+#include <curses.h>
 #include <stdio.h>
-#include <conio.h>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -10,6 +10,7 @@
 #include <thread>
 #include <cmath>
 #include <exception>
+
 
 using namespace std;
 
@@ -21,13 +22,15 @@ HANDLE serialHandle = INVALID_HANDLE_VALUE;
 
 void ClearKeyboardBuffer()
 {
-    while (_kbhit()) _getch();  // clear the input buffer
+    //while (_kbhit())
+    // getch();  // clear the input buffer
 }
+
 
 
 bool CheckUserCancellation()
 {
-    return (_kbhit() && GetKeyState('Q') < 0);
+    return ( GetKeyState('Q') < 0);
 }
 
 
@@ -136,7 +139,7 @@ class InputParser{
 };
 
 
-void OpenSerialPort(const string serial_port, int baud)
+void OpenSerialPort(const string serial_port, int baud,int bytesize,int stopbit,string parity)
 {
     char error[400];
     DWORD gle = 0;
@@ -148,12 +151,15 @@ void OpenSerialPort(const string serial_port, int baud)
         switch(gle)
         {
         case ERROR_FILE_NOT_FOUND:
-            throw exception("COM port does not exist!");
+            printf("COM port does not exist!");
+            throw exception();
         case ERROR_ACCESS_DENIED:
-            throw exception("Access denied while trying to open COM port!");
+            printf("Access denied while trying to open COM port!");
+            throw exception();
         default:
-            sprintf_s(error, "An error occurred! GLE=%lu", GetLastError());
-            throw exception(error);
+            sprintf(error, "An error occurred! GLE=%lu", GetLastError());
+            printf(error);
+            throw exception();
         }
     }
 
@@ -163,17 +169,23 @@ void OpenSerialPort(const string serial_port, int baud)
 
     if (!GetCommState(serialHandle, &serialParams))
     {
-        sprintf_s(error,"Error getting serial port state! GLE=%lu", GetLastError());
-        throw exception(error);
+        sprintf(error,"Error getting serial port state! GLE=%lu", GetLastError());
+        printf(error);
+        throw exception();
     }
     serialParams.BaudRate = baud;
-    serialParams.ByteSize = 8;
+    serialParams.ByteSize=8;
+    if(bytesize==7)    serialParams.ByteSize = 7;
     serialParams.StopBits = ONESTOPBIT;
+    if(stopbit==2) serialParams.StopBits =TWOSTOPBITS;
     serialParams.Parity = NOPARITY;
+    if(parity=="ODD")  serialParams.Parity=ODDPARITY;
+    if(parity=="EVEN") serialParams.Parity=EVENPARITY;
     if (!SetCommState(serialHandle, &serialParams))
     {
-        sprintf_s(error, "Error setting serial port state! GLE=%lu", GetLastError());
-        throw exception(error);
+        sprintf(error, "Error setting serial port state! GLE=%lu", GetLastError());
+        printf(error);
+        throw exception();
     }
 
     // Set timeouts
@@ -186,8 +198,9 @@ void OpenSerialPort(const string serial_port, int baud)
 
     if (!SetCommTimeouts(serialHandle, &timeouts))
     {
-        sprintf_s(error, "Error setting serial port timeouts! GLE=%lu", GetLastError());
-        throw exception(error);
+        sprintf(error, "Error setting serial port timeouts! GLE=%lu", GetLastError());
+        printf(error);
+        throw exception();
     }
 
     printf("Serial port opened successfully.\n");
@@ -219,14 +232,16 @@ void OpenNamedPipe(const string pipe_name)
         gle = GetLastError();
         if (gle != ERROR_PIPE_BUSY)
         {
-            sprintf_s(error,"Could not open pipe. GLE=%lu", gle);
-            throw exception(error);
+            sprintf(error,"Could not open pipe. GLE=%lu", gle);
+            printf(error);
+            throw exception();
         }
 
         // All pipe instances are busy, so wait for 10 seconds.
         if (!WaitNamedPipeA(pipe_name.c_str(), 10000))
         {
-            throw exception("Could not open pipe: 10 second wait timed out.");
+            printf("Could not open pipe: 10 second wait timed out.");
+            throw exception();
         }
     }
 
@@ -239,8 +254,9 @@ void OpenNamedPipe(const string pipe_name)
         NULL);    // don't set maximum time
     if (!fSuccess)
     {
-        sprintf_s(error,"SetNamedPipeHandleState failed. GLE=%lu", GetLastError());
-        throw exception(error);
+        sprintf(error,"SetNamedPipeHandleState failed. GLE=%lu", GetLastError());
+        printf(error);
+        throw exception();
     }
 
     printf("Named pipe opened successfully.\n");
@@ -261,21 +277,27 @@ int main(int argc, char **argv)
     char error[400];
     DWORD gle = 0;
 
-    printf("COMpipe 0.2\n");
-    printf("https://github.com/tdhoward/COMpipe\n\n");
+    printf("COMpipe 0.3\n");
+    printf("https://github.com/Unissia/COMpipe\n project forked from tdhoward/COMpipe \n");
 
     // Handle command line parameters
     if(argc < 2)
     {
         printf("Usage:\n");
-        printf("  COMpipe [-b <baud rate>] -c <COM port name> -p <pipe name>\n\n");
+        printf("  COMpipe [-b <baud rate>] [-z <byte size>] [-s <stop bit>] [-y <parity>]  -c <COM port name> -p <pipe name>\n\n");
         printf("Examples:\n");
         printf("  COMpipe -c \\\\.\\COM8 -p \\\\.\\pipe\\MyLittlePipe\n");
         printf("  COMpipe -b 19200 -c \\\\.\\COM8 -p \\\\.\\pipe\\MyLittlePipe\n\n");
         printf("Notes:\n  1. COMpipe does not create a named pipe, it only uses an existing named pipe.\n");
         printf("  2. COMpipe must be run as administrator.\n");
         printf("  3. The default baud rate is 9600.\n");
-        printf("      Options include: 4800, 9600, 14400, 19200, 38400, 57600, and 115200. \n\n");
+        printf("      Options include: 4800, 9600, 14400, 19200, 38400, 57600, and 115200 \n");
+        printf("  4. byte size = 8,7. default 8.\n");
+        printf("  5. stop bit : 1 or 2, default 1.\n");
+        printf("  6. parity : NONE,ODD,EVEN default NONE\n");
+        printf("To run in Cygwin (as admin): \n");
+        printf("  pipe.exe -b 4800 -p ODD -c COM7 //./pipe/mypipe\n\n");
+        
         return 0;
     }
 
@@ -302,9 +324,21 @@ int main(int argc, char **argv)
     if (baud_rate.empty())
         baud_rate = "9600";
     int baud = stoi(baud_rate);
-
+    string stop_bit=input.getCmdOption("-s");
+    if(stop_bit.empty())
+        stop_bit="1";
+    int sbit=stoi(stop_bit);
+    string byte_size=input.getCmdOption("-z");
+    if(byte_size.empty())
+        byte_size="1";
+    int bytesize=stoi(byte_size);
+    string parity=input.getCmdOption("-y");
+    if(parity.empty())
+        parity="NONE";
+    string sparity=parity;
+    
     try {
-        RetryWithBackoff(OpenSerialPort, 5, 2000, serial_port, baud);
+        RetryWithBackoff(OpenSerialPort, 5, 2000, serial_port, baud,bytesize,sbit,sparity);
     }
     catch (const exception& e) {
         cerr << "Caught exception after maximum retries: " << e.what() << std::endl;
@@ -336,7 +370,7 @@ int main(int argc, char **argv)
             try {
                 CloseHandle(serialHandle);
                 Sleep(2000);
-                RetryWithBackoff(OpenSerialPort, -1, 5000, serial_port, baud);  // retry every 5 seconds, forever
+                RetryWithBackoff(OpenSerialPort, -1, 5000, serial_port, baud, bytesize,sbit,sparity);  // retry every 5 seconds, forever
                 continue;  // restart the while loop
             }
             catch (const exception& e) {
@@ -358,8 +392,9 @@ int main(int argc, char **argv)
             // TODO: check on cbWritten
             if (!fSuccess)
             {
-                sprintf_s(error, "WriteFile to pipe failed. GLE=%lu\n", GetLastError());
-                throw exception(error);
+                sprintf(error, "WriteFile to pipe failed. GLE=%lu\n", GetLastError());
+                printf(error);
+                throw exception();
             }
         }
 
@@ -392,8 +427,9 @@ int main(int argc, char **argv)
                         Shutdown(-1);
                     }
                 default:
-                    sprintf_s(error, "ReadFile from pipe failed. GLE=%lu\n", gle);
-                    throw exception(error);
+                    sprintf(error, "ReadFile from pipe failed. GLE=%lu\n", gle);
+                    printf(error);
+                    throw exception();
                 }
             }
         }
@@ -405,8 +441,9 @@ int main(int argc, char **argv)
         if (!WriteFile(serialHandle, in_buffer, in_bytes, &cbWritten, NULL))
         {
             //error occurred. Report to user.
-            sprintf_s(error, "Error writing to serial port! GLE=%lu\n", GetLastError());
-            throw exception(error);
+            sprintf(error, "Error writing to serial port! GLE=%lu\n", GetLastError());
+            printf(error);
+            throw exception();
         }
 
         /*
