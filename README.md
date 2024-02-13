@@ -8,10 +8,13 @@ Feel free to modify the source code and use as desired.  It was compiled using V
 *Update*
 Version 0.2 (20-July-2023)
 Added automatic retries and exponential backoff for when a connection to a named pipe or serial port is temporarily lost.  This can happen when rebooting the virtual machine, for example.  Also, other miscellaneous updates.
+
 Version 0.3 (13.02.2024)
 added cygwin g++ compilation, exe=pipe.exe, added -z, -s, -y options
+
 to compile in cygwin, add g++, gcc, libncurses devel in cygwin, run in the directory g++ -c main.cpp and thne g++ -o pipe main.o
 the binary in x64\release doesn't include these options. To run as a service : cygrunsrv
+
 ```
 Usage:
   COMpipe [-b <baud rate>]  [-z <byte size>] [-s <stop bit>] [-y <parity>] -c <COM port name> -p <pipe name>
